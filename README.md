@@ -8,9 +8,10 @@
 
 ## 목차
 [리액트 렌더링은 어떻게 일어나는가?](#리액트-렌더링은-어떻게-일어나는가)  
-[JSX](#jsx)  
 [Reconciliation](#reconciliation)  
+[JSX](#jsx)  
 [Batching](#batching)  
+[Fiber Architecture](#fiber-architecture)  
 
 ## 리액트 렌더링은 어떻게 일어나는가?
 리액트에서의 렌더링은 브라우저 렌더링과 다릅니다. 브라우저 렌더링이란 브라우저가 HTML, CSS, JavaScript를 해석하여 우리가 보는 화면에 실제로 나타내는 과정을 말합니다. 단순히 파일을 읽는 것만 아니라 웹 페이지의 구조를 분석하고 스타일과 스크립트를 계산하며, 사용자에게 보이는 픽셀 단위의 화면을 만들어내는 아주 복잡합 과정을 의미합니다.
@@ -120,7 +121,7 @@ Counter
 
 리액트는 새로운 Fiber 트리를 만들고, 이전 트리와 비교하여 변경된 노드(`h2`)를 감지합니다. 이 과정을 Reconciliation이라고 합니다.
 
-> [Reconciliation (조정 과정)](#reconciliation)  
+> [Reconciliation (재조정)](#reconciliation)  
 > -> 리액트는 Fiber 트리 비교(Diffing)를 수행하여 다음과 같은 동작을 합니다.
 > - 같은 타입의 요소(`div`, `h1`, `button`)는 유지
 > - `h2`의 텍스트가 변경됨 -> 새로운 Fiber 노드로 교체
@@ -260,14 +261,76 @@ Reconciliation(재조정)이란 컴포넌트의 상태가 변경되면 기존 �
 - key를 활용한 리스트 비교 최적화
 
 
-
 ## Batching
-리액트는 렌더링을 최소한으로 일으키기 위해 작업을 한 번에 묶어서 일괄 처리합니다. Trigger 단계에서 setState 함수는 Queue에 순차적으로 들어갑니다. 비교 알고리즘으로 어떤 DOM이 변경되어야 하는지 알았기 때문에
+Batching(이하 배칭)은 여러 개의 상태 업데이트를 하나로 묶어 처리하여 렌더링 횟수를 줄이는 최적화 기법입니다.
+
+리액트는 컴포넌트 상태가 변경될 때마다 렌더링을 수행하려고 합니다. 하지만 여러 개의 상태가 동시에 업데이트되면 각각 렌더링을 실행하는 것이 비효율적이므로, 배칭을 사용해 한 번만 렌더링 하도록 최적화합니다.
+
+React 17 이하에서는 이벤트 핸들러 내부에서만 배칭이 적용되었습니다.
+```js
+const handleClick = () => {
+  setCount(count + 1);
+  setText("World");
+};
+```
+
+하지만 `setTimeout`, `fetch` 등의 비동기 함수에서는 배칭이 동작하지 않았습니다.
+```js
+setTimeout(() => {
+  setCount(count + 1);
+  setText("World");
+}, 1000);
+```
+
+React 18 이후로는 비동기 함수에서도 배칭이 자동으로 적용되었습니다. 즉, `setTimeout` 내부에서도 자동 배칭이 적용되어 한 번만 렌더링이 발생합니다.
+
+배칭으로 인해 상태 업데이트가 즉시 반영되지 않을 때, `flushSync()`를 사용하면 강제로 렌더링을 실행할 수 있습니다.
+```js
+import { flushSync } from "react-dom";
+
+const handleClick = () => {
+  flushSync(() => setCount(count + 1)); // 즉시 렌더링 발생
+  flushSync(() => setText("World"));    // 또 즉시 렌더링 발생
+};
+```
 
 ## Fiber Architecture
 ### 등장 배경
-Fiber 아키텍처는 스택 아키텍처의
+React 15까지는 가상 DOM을 변경할 때 전체 컴포넌트 트리를 한 번에 동기적으로 처리하는 Stack Reconciliation 방식을 사용했습니다. 이 방식은 몇 가지 문제를 일으켰습니다.
+
+첫 번째, 렌더링이 시작되면 끝날 때까지 중단할 수 없었습니다. 한 번 가상 DOM을 비교(Reconciliation)하기 시작하면, 브라우저가 다른 작업을 처리할 수가 없었습니다. 이 때문에 화면이 버벅거리거나(freezing) 애니메이션이 끊기는 문제가 발생했습니다.
+
+두 번째, 프레임 단위로 나누어 실행할 수 없었습니다. 브라우저는 초당 60프레임으로 동작하는 게 이상적입니다(16.67ms/프레임). 하지만 기존 리액트는 렌더링을 한 번에 끝내야 했기 때문에 무거운 컴포넌트가 많으면 프레임 드롭(frame drop)이 발생했습니다.
+
+마지막으로, 우선순위 기반 업데이트가 불가능했습니다. 사용자 입력(키보드, 마우스)과 같은 중요한 UI 이벤트가 발생해도 리액트가 모든 렌더링을 마칠 때까지 기다려야 했습니다. 다시 말해 긴급한 업데이트를 먼저 수행하는 것이 불가능했습니다.
+
+위 문제점들을 해결하기 위해 리액트팀은 비동기적이고 효율적인 렌더링을 수행할 수 있도록 새로운 아키텍처인 Fiber를 설계했습니다.
+
+### Fiber 아키텍처란?
+Fiber는 리액트 팀이 기존의 재조정(Reconciliation) 알고리즘을 개선하여 더 부드러운 렌더링과 성능 최적화를 목적으로 도입한 새로운 아키텍처입니다. 2017년 React 16에서 처음 도입되었으며, 기존 가상 DOM과 다르게 작업을 작은 단위(Fiber Node)로 나누어 우선순위를 조정하거나 작업을 중단하고 더 중요한 작업을 먼저 처리할 수 있도록 설계되었습니다. 이를 통해 비동기 렌더링, 우선순위 기반 업데이트, 중단 및 재개 기능을 지원합니다.
+
 ### 핵심 기능
-리액트 Fiber의 가장 핵심 기능 중 하나는 '비동기 렌더링'입니다. 비동기 렌더링을 통해 리액트는 더 중요한 업데이트를 우선적으로 처리 가능하며, 사용자 인터렉션 등의 중요 작업을 방해 받지 않고 처리할 수 있기 때문입니다.
+리액트 Fiber의 가장 핵심 기능 중 하나는 '비동기 렌더링'입니다. 비동기 렌더링을 통해 리액트는 더 중요한 업데이트를 우선적으로 처리 가능하며, 사용자 인터렉션 등의 중요 작업을 방해 받지 않고 처리할 수 있습니다.
 
 또 다른 핵심 기능은 '더블 버퍼링'입니다. 더블 버퍼링은 현재 화면에 표시되는 내용과 새로 업데이트될 내용을 별도로 관리함으로써 화면 깜빡임 없이 부드러운 UI 업데이트를 가능하게 합니다. 이를 통해 애플리케이션의 렌더링 성능을 최적화하고 사용자에게 부드러운 인터렉션을 제공합니다.
+
+### Fiber를 활용한 React 기능들
+1. Concurrent Rendering (동시성 렌더링)
+	- `useTransition`, `startTransition`과 같은 API를 통해 비동기 렌더링이 가능합니다.
+ 	- 사용자 입력과 무거운 렌더링 작업을 동시에 처리할 수 있습니다.
+2. Suspense & Lazy Loading
+	- `React.Suspense`를 활용하여 데이터를 가져오면서도 UI가 멈추지 않도록 최적화합니다.
+ 	- 코드 스플리팅을 통한 `React.lazy()` 사용이 가능합니다.
+
+### 결론: Fiber는 무엇을 해결했나?
+1. 비동기 렌더링 지원을 통해 긴 렌더링 중에도 중단 및 재개가 가능합니다.
+2. 우선순위 기반 렌더링을 통해 중요 업데이트를 먼저 수행 가능합니다.
+3. 더블 버퍼링으로 이전 상태를 저장하고 최적화합니다.
+4. Concurrent Mode를 지원하여 더 부드러운 사용자 경험을 제공합니다.
+5. Suspense, Lazy Loading 등 최신 리액트 기능을 가능하게 했습니다.
+
+## Reference
+[[GitHub] acdlite - React Fiber Architecture](https://github.com/acdlite/react-fiber-architecture)  
+[[Mark's Dev Blog] A (Mostly) Complete Guide to React Rendering Behavior](https://blog.isquaredsoftware.com/2020/05/blogged-answers-a-mostly-complete-guide-to-react-rendering-behavior/#final-thoughts)  
+[[Medium] What is React Fiber and How It Helps You Build a High-Performing React Applications](https://sunnychopper.medium.com/what-is-react-fiber-and-how-it-helps-you-build-a-high-performing-react-applications-57bceb706ff3)  
+
