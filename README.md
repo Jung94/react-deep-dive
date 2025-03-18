@@ -121,7 +121,7 @@ Counter
 
 리액트는 새로운 Fiber 트리를 만들고, 이전 트리와 비교하여 변경된 노드(`h2`)를 감지합니다. 이 과정을 Reconciliation이라고 합니다.
 
-> [Reconciliation (재조정)](#reconciliation)  
+> [Reconciliation (재조정)](#등장-배경)  
 > -> 리액트는 Fiber 트리 비교(Diffing)를 수행하여 다음과 같은 동작을 합니다.
 > - 같은 타입의 요소(`div`, `h1`, `button`)는 유지
 > - `h2`의 텍스트가 변경됨 -> 새로운 Fiber 노드로 교체
