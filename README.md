@@ -189,6 +189,7 @@ Fiber 기반의 렌더링은 두 단계, Render 단계와 Commit 단계로 나�
 Fiber 트리(Fiber Tree)는 리액트의 렌더링을 관리하는 Singly Linked List(단일 링크드 리스트, 이하 링크드 리스트) 기반 트리 구조입니다. 각 UI 요소는 Fiber 노드로 표현되며, 이를 트리 형태로 구성하여 렌더링을 관리합니다.
 
 - 기존 가상 DOM과의 차이점
+
 | 기존 Virtual DOM (React 15) | Fiber 트리 (React 16+) |
 | --- | --- |
 | 일반적인 트리 구조 | 링크드 리스트(Linked List) 기반 트리 |
